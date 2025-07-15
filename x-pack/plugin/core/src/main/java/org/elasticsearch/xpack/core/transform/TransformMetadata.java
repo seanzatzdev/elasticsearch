@@ -13,6 +13,7 @@ import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.Diff;
 import org.elasticsearch.cluster.NamedDiff;
 import org.elasticsearch.cluster.metadata.Metadata;
+import org.elasticsearch.cluster.metadata.ProjectMetadata;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.collect.Iterators;
 import org.elasticsearch.common.io.stream.StreamInput;
@@ -218,7 +219,20 @@ public class TransformMetadata implements Metadata.ProjectCustom {
         return TransformMetadata;
     }
 
+    public static TransformMetadata getTransformMetadata(ProjectMetadata project) {
+        TransformMetadata TransformMetadata = project == null ? null : project.custom(TYPE);
+        if (TransformMetadata == null) {
+            return EMPTY_METADATA;
+        }
+        return TransformMetadata;
+    }
+
+    @Deprecated(forRemoval = true)
     public static boolean upgradeMode(ClusterState state) {
         return getTransformMetadata(state).upgradeMode();
+    }
+
+    public static boolean upgradeMode(ProjectMetadata project) {
+        return getTransformMetadata(project).upgradeMode();
     }
 }
