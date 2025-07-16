@@ -20,6 +20,8 @@ import org.elasticsearch.cluster.LocalNodeMasterListener;
 import org.elasticsearch.cluster.metadata.AliasMetadata;
 import org.elasticsearch.cluster.metadata.IndexMetadata;
 import org.elasticsearch.cluster.metadata.MappingMetadata;
+import org.elasticsearch.cluster.metadata.ProjectId;
+import org.elasticsearch.cluster.metadata.ProjectMetadata;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.component.LifecycleListener;
 import org.elasticsearch.common.settings.Settings;
@@ -150,12 +152,16 @@ public class EnrichPolicyMaintenanceService implements LocalNodeMasterListener {
         // If the new index is in the cluster state but not in the inflight list, then that means that the index name was removed from the
         // list inflight list because it has already been promoted or because the policy execution failed.
         ClusterState clusterState = clusterService.state();
+        for (var project : clusterState.metadata().projects().values()) {
+            cleanUpEnrichIndices(project);
+        }
+    }
+
+    private void cleanUpEnrichIndices(ProjectMetadata project) {
         Set<String> inflightPolicyExecutionIndices = enrichPolicyLocks.inflightPolicyIndices();
-        final Map<String, EnrichPolicy> policies = EnrichStore.getPolicies(clusterState.metadata().getProject());
+        final Map<String, EnrichPolicy> policies = EnrichStore.getPolicies(project);
         logger.debug(() -> "Working enrich indices excluded from maintenance [" + String.join(", ", inflightPolicyExecutionIndices) + "]");
-        String[] removeIndices = clusterState.metadata()
-            .getProject()
-            .indices()
+        String[] removeIndices = project.indices()
             .values()
             .stream()
             .filter(indexMetadata -> indexMetadata.getIndex().getName().startsWith(EnrichPolicy.ENRICH_INDEX_NAME_BASE))
@@ -163,7 +169,7 @@ public class EnrichPolicyMaintenanceService implements LocalNodeMasterListener {
             .map(IndexMetadata::getIndex)
             .map(Index::getName)
             .toArray(String[]::new);
-        deleteIndices(removeIndices);
+        deleteIndices(project.id(), removeIndices);
     }
 
     private static boolean indexUsedByPolicy(
@@ -210,10 +216,10 @@ public class EnrichPolicyMaintenanceService implements LocalNodeMasterListener {
         return true;
     }
 
-    private void deleteIndices(String[] removeIndices) {
+    private void deleteIndices(ProjectId projectId, String[] removeIndices) {
         if (removeIndices.length != 0) {
             DeleteIndexRequest deleteIndices = new DeleteIndexRequest().indices(removeIndices).indicesOptions(IGNORE_UNAVAILABLE);
-            client.admin().indices().delete(deleteIndices, new ActionListener<>() {
+            client.projectClient(projectId).admin().indices().delete(deleteIndices, new ActionListener<>() {
                 @Override
                 public void onResponse(AcknowledgedResponse acknowledgedResponse) {
                     logger.debug("Completed deletion of stale enrich indices [{}]", () -> Arrays.toString(removeIndices));
